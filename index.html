@@ -128,6 +128,13 @@
     border: 1px solid color-mix(in srgb, var(--accento) 40%, transparent);
     color: var(--accento);
   }
+  /* Quando la centralina non risponde la pillola cambia colore: verde acqua
+     vuol dire "sto leggendo dati veri", rosso vuol dire "non so cosa succede
+     nella vasca". Sono due stati diversi e devono sembrarlo. */
+  .pillola.assente {
+    color: var(--allarme);
+    border-color: color-mix(in srgb, var(--allarme) 45%, transparent);
+  }
   .tondo {
     width: 34px; height: 34px; border-radius: 999px; cursor: pointer;
     background: var(--carta); border: var(--bordo-carta); box-shadow: var(--ombra);
@@ -593,6 +600,103 @@ const NUM_PESCI = 3;
 // Temperatura mostrata dal termometro. Finché il firmware non esiste è simulata:
 // quando l'ESP32 risponderà, basta scrivere qui il valore vero letto via HTTP.
 const TEMPERATURA = { valore: 23.4, simulata: true };
+
+/* ═══════════════════════════════════════════════════════════════════════
+   LA CENTRALINA VERA
+   Da qui in poi i numeri non se li inventa piu' l'app: li chiede all'ESP32.
+   L'indirizzo si prova in due modi perche' nessuno dei due basta da solo:
+   `acquario.local` e' stabile ma su Windows spesso non si risolve, mentre il
+   numero funziona sempre ma il router puo' cambiarlo. Si tenta il nome, e al
+   primo fallimento si passa al numero e non si torna piu' indietro.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+const CENTRALINA = {
+  indirizzi: ['http://acquario.local', 'http://192.168.1.206'],
+  quale: 0,
+  collegata: false,
+  ultimoContatto: 0,
+  ATTESA_MS: 2500,        // oltre questo tempo la si considera muta
+  PERIODO_MS: 2000,
+};
+
+/* Una richiesta con scadenza. Senza, una scheda spenta lascia la promessa
+   appesa per sempre e l'app resta convinta di stare aspettando una risposta. */
+async function chiediAllaCentralina(percorso) {
+  const taglia = new AbortController();
+  const scadenza = setTimeout(() => taglia.abort(), CENTRALINA.ATTESA_MS);
+  try {
+    const base = CENTRALINA.indirizzi[CENTRALINA.quale];
+    const r = await fetch(base + percorso, { signal: taglia.signal, cache: 'no-store' });
+    if (!r.ok) throw new Error('risposta ' + r.status);
+    const dati = await r.json();
+    CENTRALINA.collegata = true;
+    CENTRALINA.ultimoContatto = Date.now();
+    return dati;
+  } catch (e) {
+    /* Il nome di rete non risponde: si passa al numero. Si prova una volta
+       sola, altrimenti a ogni giro si perderebbero due secondi e mezzo su un
+       indirizzo che gia' sappiamo non funzionare. */
+    if (CENTRALINA.quale < CENTRALINA.indirizzi.length - 1) {
+      CENTRALINA.quale++;
+      return chiediAllaCentralina(percorso);
+    }
+    CENTRALINA.collegata = false;
+    return null;
+  } finally {
+    clearTimeout(scadenza);
+  }
+}
+
+/* Quello che arriva dalla scheda entra qui. La regola: se la centralina non
+   risponde, i valori NON restano quelli di prima come se fossero freschi -
+   l'app dichiara di non sapere. Un dato vecchio spacciato per attuale e'
+   peggio di nessun dato, soprattutto su una temperatura. */
+function applicaStato(dati) {
+  const nota = el('statoCollegamento');
+  const pillola = el('badgeStato');
+
+  if (!dati) {
+    TEMPERATURA.simulata = true;
+    if (nota) nota.textContent = 'centralina non raggiungibile';
+    if (pillola) { pillola.textContent = 'NON COLLEGATO'; pillola.classList.add('assente'); }
+    if (typeof aggiornaValori === 'function') aggiornaValori();
+    return;
+  }
+
+  if (typeof dati.temperatura === 'number') {
+    TEMPERATURA.valore = dati.temperatura;
+    TEMPERATURA.simulata = false;
+    if (typeof termometro !== 'undefined' && termometro.disegna) {
+      termometro.disegna(TEMPERATURA.valore);
+    }
+  } else {
+    // la scheda c'e' ma la sonda no: si dichiara, non si inventa
+    TEMPERATURA.simulata = true;
+  }
+
+  // il modo di luce vero della striscia comanda anche la scena
+  if (dati.modo && dati.modo !== modoAttuale && MODI[dati.modo]) {
+    /* `true` = il comando arriva dalla scheda: si aggiorna la scena senza
+       rimandare l'ordine indietro alla centralina, che lo ha appena eseguito.
+       Senza questa distinzione i due si rimbalzerebbero il comando a vicenda. */
+    impostaModo(dati.modo, true);
+  }
+
+  if (Array.isArray(dati.canali) && dati.canali[0]) {
+    CENTRALINA.filtroAcceso = dati.canali[0].acceso;
+  }
+
+  if (nota) nota.textContent = 'ESP32 collegato';
+  if (pillola) {
+    pillola.textContent = TEMPERATURA.simulata ? 'SONDA ASSENTE' : 'DAL VIVO';
+    pillola.classList.remove('assente');
+  }
+  if (typeof aggiornaValori === 'function') aggiornaValori();
+}
+
+async function interrogaCentralina() {
+  applicaStato(await chiediAllaCentralina('/stato'));
+}
 
 // I quattro modi della striscia WS2812B previsti dal firmware.
 const MODI = {
@@ -2838,9 +2942,17 @@ let luceObiettivo = {
 };
 
 let modoAttuale = 'giorno';
-function impostaModo(nome) {
+function impostaModo(nome, vieneDallaScheda) {
   const m = MODI[nome];
   modoAttuale = nome;
+
+  /* Il tasto non cambia piu' solo la scena 3D: accende davvero la striscia
+     sopra la vasca. Si manda e non si aspetta - se la centralina non risponde
+     la scena cambia lo stesso, e al giro successivo `interrogaCentralina`
+     rimettera' le cose a posto leggendo com'e' davvero. */
+  if (!vieneDallaScheda && typeof chiediAllaCentralina === 'function') {
+    chiediAllaCentralina('/luce?modo=' + encodeURIComponent(nome));
+  }
   luceObiettivo = { ...m, colore: new THREE.Color(m.colore), nebbia: new THREE.Color(m.nebbia) };
   // solo i tasti dei modi: `.modo` la portano anche "Vista tecnica" e "Tour",
   // e senza il filtro cambiando luce si spegnerebbe il loro stato acceso
@@ -2953,6 +3065,9 @@ function disegna(tempoMs) {
   scena.fog.far = distanza + VASCA.profondita * 1.25;
 
   // termometro: finché il dato è simulato oscilla piano come farebbe davvero
+  /* L'oscillazione finta serve solo finche' la sonda vera non parla: appena
+     `simulata` diventa falso questo blocco smette da solo di sovrascrivere il
+     valore letto dalla centralina. */
   if (TEMPERATURA.simulata && t > prossimoAggiornamentoTemp) {
     prossimoAggiornamentoTemp = t + 2;
     TEMPERATURA.valore = 23.4 + Math.sin(t * 0.05) * 0.4 + Math.sin(t * 0.31) * 0.1;
@@ -4121,10 +4236,20 @@ function aggiornaValori() {
   el('vLuce').textContent = perc;
   el('hLuce').textContent = 'LUCE ' + perc + '%';
   el('dLuce').textContent = modoAttuale;
-  el('hFiltro').textContent = 'FILTRO ON';
+  /* Il filtro non e' piu' un'etichetta fissa: e' lo stato vero del canale 1 del
+     rele'. Finche' la centralina non risponde si dichiara di non saperlo. */
+  el('hFiltro').textContent = !CENTRALINA.collegata ? 'FILTRO —'
+                            : (CENTRALINA.filtroAcceso ? 'FILTRO ON' : 'FILTRO OFF');
 }
 setInterval(() => { aggiornaValori(); ultimaTemp = TEMPERATURA.valore; }, 3000);
 aggiornaValori();
+
+/* ── il dialogo con la centralina parte qui ──
+   Ogni due secondi si chiede lo stato. Se la scheda non risponde, `applicaStato`
+   riceve null e l'app lo dichiara invece di continuare a mostrare l'ultimo
+   numero letto come se fosse di adesso. */
+interrogaCentralina();
+setInterval(interrogaCentralina, CENTRALINA.PERIODO_MS);
 
 // Rete di sicurezza: se il caricamento del modello non chiama nessuna delle due
 // callback, dopo 8 secondi si parte comunque con i pesci procedurali.
