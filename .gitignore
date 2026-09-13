@@ -1,2 +1,7 @@
 .DS_Store
 Thumbs.db
+
+# La scena 3D resta in questa cartella sul PC ma non si pubblica piu' (13/09/2026):
+# il sito mostra solo il pannello della centralina, che sta in docs/.
+/index.html
+/assets/

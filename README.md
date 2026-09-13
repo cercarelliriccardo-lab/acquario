@@ -1,29 +1,24 @@
-# Acquario smart — app
+# Acquario smart
 
-Cruscotto dell'acquario da 120 litri: scena 3D della vasca in tempo reale
-(Three.js) con i componenti che si toccano per vederne dati e comandi.
+Pannello di controllo di un acquario da 120 litri con tre pesci rossi.
 
-Una pagina sola, `index.html`, senza passaggio di compilazione: si apre servendola
-via http.
+**Apri:** https://cercarelliriccardo-lab.github.io/acquario/
 
-**I valori mostrati sono ancora simulati**: il firmware ESP32 che leggerà sonda,
-striscia LED e relè non esiste ancora. Quando ci sarà, il gancio della
-temperatura è `TEMPERATURA.valore`.
+Temperatura, luce (cinque modi, intensità, orari automatici), filtro, manutenzione
+e calendario dei lavori, tutto letto e comandato da una centralina ESP32.
 
-## Modelli 3D
+## Come arriva alla vasca
 
-- pesci "Veiltail goldfish" e "Jikin goldfish" di **somitsu** (Sketchfab),
-  licenza [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-- sasso: fotoscansione da Sketchfab, licenza CC BY 4.0
-- piante: modellate per questo progetto
-- pesce di ripiego (`pesce-rosso.obj`): generato con Meshy, orientato e colorato
-  dallo script del progetto
+- **In casa** il telefono parla direttamente con la centralina, su
+  `http://acquario.local`, che serve questa stessa pagina.
+- **Fuori casa** la pagina passa da un server MQTT su HiveMQ Cloud: è la
+  centralina che si collega a internet, sul router non c'è nessuna porta aperta.
+  La password dell'utenza del telefono si inserisce una volta nell'app e resta
+  solo sul telefono: in questo repository non ce n'è nessuna.
 
-## Prove in locale
+## File
 
-```
-python -m http.server 8000
-```
-
-poi `http://localhost:8000`. Con il doppio click non parte: i browser bloccano i
-moduli JavaScript nelle pagine aperte come file locale.
+- `docs/index.html` — la pagina pubblicata. È una copia di `pagina.h` del firmware,
+  estratta dalla stringa: il codice vero si modifica lì, poi si ricopia qui.
+- `docs/pannello/` — rimanda al vecchio indirizzo, per le icone già salvate
+  sulla schermata Home.
