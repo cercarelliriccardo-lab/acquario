@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Acquario">
+<link rel="apple-touch-icon" href="icona.png">
 <title>Acquario</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -273,8 +274,8 @@ footer{text-align:center;font:400 11px/1.4 'Outfit',sans-serif;color:rgba(240,25
 
 /* ===========================================================================
    I MODI - tabella e colori del progetto grafico di ric.
-   "luce" da 0 a 1 dice quanto quel modo illumina: e' il numero che spegne i
-   pesci di notte, non un valore decorativo.
+   "luce" da 0 a 1 dice quanto quel modo illumina: e' il numero che scurisce
+   piante e ghiaia di notte, non un valore decorativo.
    =========================================================================== */
 var MODI = {
   alba:     { nome:'Alba',     bollo:'#E8A34D', accento:'#E8A34D', acqua:['#9c6440','#7d4530','#3a2118'], luce:0.50 },
@@ -287,8 +288,8 @@ var ORDINE = ['alba','giorno','tramonto','luna','spento'];
 
 function caso(i){ var x = Math.sin(i*127.1+3.7)*43758.5453; return x-Math.floor(x); }
 function fra(a,b,t){ return a+(b-a)*t; }
-/* Spegne un colore verso il grigio quando cala la luce: di notte un pesce
-   arancione non e' arancione, e' una sagoma. */
+/* Spegne un colore verso il grigio quando cala la luce: di notte il verde
+   delle piante non e' verde, e' una sagoma. */
 function smorza(c,k){
   var g=(c[0]*0.35+c[1]*0.5+c[2]*0.15)*0.55;
   return [Math.round(fra(g,c[0],k)),Math.round(fra(g,c[1],k)),Math.round(fra(g,c[2],k))];
@@ -410,255 +411,11 @@ var avviso='', scadenzaAvviso=0;
 
 function segnala(t){ avviso=t; scadenzaAvviso=Date.now()+5000; orologio(); }
 
-/* ===========================================================================
-   I PESCI
-
-   Il nuoto e' stato rifatto rispetto al disegno, su richiesta di ric. Nel
-   disegno i pesci andavano a velocita' costante in linea retta e, arrivati al
-   bordo, sparivano da un lato e ricomparivano dall'altro. In una vasca chiusa
-   quella e' la cosa che tradisce subito il trucco: il vetro c'e', e un pesce
-   che ci arriva gira.
-
-   Cosa fa adesso, e perche':
-
-   1. HA UN'INTENZIONE. Sceglie un punto della vasca e ci va, poi ne sceglie un
-      altro. Il movimento non e' piu' una direzione fissa ma una rotta, e il
-      corpo punta dove sta andando.
-
-   2. STERZA, non gira di scatto. La rotta ruota al massimo di tot radianti al
-      secondo: le curve hanno un raggio, come le hanno quelle vere.
-
-   3. SPINGE E PLANA. Un pesce non avanza a velocita' costante: da' un colpo di
-      coda, accelera, poi scivola rallentando. Qui la spinta arriva solo nella
-      meta' utile del battito e l'acqua frena in continuazione. La velocita'
-      pulsa da sola, senza doverla scrivere.
-
-   4. LA CODA SEGUE LO SFORZO. Battito piu' rapido e ampio quando accelera o e'
-      spaventato, lento quando plana. E' la stessa causa che produce le due
-      cose, quindi non possono andare fuori sincrono.
-
-   5. IL CORPO SI PIEGA IN CURVA, dalla parte giusta.
-
-   6. SI SCANSANO. Se due si avvicinano troppo, ognuno sterza via: senza questo
-      passano l'uno dentro l'altro e l'illusione crolla.
-
-   7. OGNI TANTO FRUGA NELLA GHIAIA, rallentando col muso in giu'. I pesci rossi
-      passano meta' giornata cosi', ed e' il dettaglio che li fa sembrare vivi
-      piu' di qualunque altro.
-
-   8. AL VETRO RALLENTA E GIRA, invece di sparire.
-   =========================================================================== */
-
-var COLORI = [
-  { corpo:[196,142,78], pinna:[168,116,62] },
-  { corpo:[206,92,42],  pinna:[178,72,30]  },
-  { corpo:[222,128,52], pinna:[190,100,38] }
-];
-
-var pesci=[], onde=[], bolle=[];
-
-function creaPesci(){
-  pesci=[];
-  for(var i=0;i<3;i++){
-    var vicino = caso(i*3+1)>0.4;
-    pesci.push({
-      x: caso(i+2)*300+40, y: 200+caso(i*5+7)*380,
-      ang: caso(i*7+3)>0.5 ? 0 : Math.PI,
-      v: 20,
-      s: vicino ? 0.95+caso(i*11)*0.5 : 0.55+caso(i*13)*0.22,
-      alpha: vicino ? 1 : 0.62,
-      /* quanto e' svelto a girare, in radianti al secondo */
-      agilita: 1.5+caso(i*17)*1.1,
-      /* quanto spinge ogni colpo di coda, e ogni quanto lo da' */
-      spinta: 150+caso(i*19)*90,
-      ritmo: 1.7+caso(i*23)*0.7,
-      fase: caso(i*29)*6.28,
-      coda: 0, piega: 0, scatto: 0,
-      bx:0, by:0, tempoBersaglio:0,
-      fruga:0, tempoFruga: 4+caso(i*31)*9,
-      c: COLORI[i%COLORI.length]
-    });
-  }
-  pesci.sort(function(a,b){ return a.s-b.s; });   // i piccoli/lontani dietro
-}
-
-function nuovoBersaglio(f,L,A,fondo,frugando){
-  var bordo = 46*f.s;
-  f.bx = bordo + Math.random()*(L-bordo*2);
-  if(frugando){
-    f.by = fondo - 14 - Math.random()*26;         // giu', vicino alla ghiaia
-    f.tempoBersaglio = 2.5+Math.random()*3;
-  }else{
-    /* Due terzi delle volte il bersaglio sta nella parte alta della vasca.
-       Non e' un vezzo: li' c'e' la finestra libera fra la testata e i pannelli,
-       ed e' l'unico punto dove i pesci si vedono davvero. Piu' in basso nuotano
-       dietro al vetro dei riquadri - che e' l'effetto voluto, ma non puo'
-       essere l'unico, altrimenti si ha una vasca che sembra vuota. */
-    var alto = Math.random()<0.66;
-    var daY = alto ? zonaDa : zonaA;
-    var aY  = alto ? zonaA  : fondo-30;
-    f.by = daY + Math.random()*Math.max(40,aY-daY);
-    f.tempoBersaglio = 2+Math.random()*4;
-  }
-}
-
-function muoviPesce(f,t,dt,L,A,fondo){
-  /* --- che cosa vuole fare adesso --- */
-  f.tempoFruga -= dt;
-  if(f.tempoFruga<=0){
-    f.fruga = f.fruga>0 ? 0 : 1;                  // alterna nuoto e frugare
-    f.tempoFruga = f.fruga ? 3+Math.random()*4 : 6+Math.random()*12;
-    nuovoBersaglio(f,L,A,fondo,f.fruga>0);
-  }
-  f.tempoBersaglio -= dt;
-  if(f.tempoBersaglio<=0) nuovoBersaglio(f,L,A,fondo,f.fruga>0);
-
-  /* --- dove vorrebbe puntare --- */
-  var vx = f.bx-f.x, vy = f.by-f.y;
-  if(vx*vx+vy*vy < 900) nuovoBersaglio(f,L,A,fondo,f.fruga>0);
-  var voluto = Math.atan2(vy,vx);
-
-  /* --- si scansano fra loro --- */
-  for(var i=0;i<pesci.length;i++){
-    var o=pesci[i]; if(o===f) continue;
-    var dx=f.x-o.x, dy=f.y-o.y, d2=dx*dx+dy*dy;
-    var soglia = 52*(f.s+o.s)*0.5;
-    if(d2 < soglia*soglia && d2>1){
-      var via = Math.atan2(dy,dx);
-      /* piu' sono vicini, piu' pesa la voglia di scansarsi */
-      var peso = 1 - Math.sqrt(d2)/soglia;
-      voluto = miscelaAngolo(voluto, via, Math.min(0.8, peso));
-    }
-  }
-
-  /* --- il vetro: non si sparisce, si gira --- */
-  var m = 34*f.s;
-  if(f.x < m)      voluto = miscelaAngolo(voluto, 0,          Math.min(1,(m-f.x)/m));
-  if(f.x > L-m)    voluto = miscelaAngolo(voluto, Math.PI,    Math.min(1,(f.x-(L-m))/m));
-  if(f.y < A*0.11) voluto = miscelaAngolo(voluto, Math.PI/2,  Math.min(1,(A*0.11-f.y)/(A*0.11)));
-  if(f.y > fondo-m)voluto = miscelaAngolo(voluto, -Math.PI/2, Math.min(1,(f.y-(fondo-m))/m));
-
-  /* --- sterzata limitata: le curve hanno un raggio --- */
-  var d = ((voluto-f.ang+Math.PI*3)%(Math.PI*2))-Math.PI;
-  var max = f.agilita*(1+1.6*f.scatto)*dt;
-  var giro = Math.max(-max,Math.min(max,d));
-  f.ang += giro;
-  /* Si riporta l'angolo dentro il mezzo giro. Non cambia nulla di come si vede:
-     serve perche' questa pagina resta accesa per mesi, e un angolo che cresce
-     sempre finirebbe per contare centinaia di migliaia di radianti, dove i
-     numeri a virgola cominciano a perdere le cifre piccole - e la sterzata
-     diventerebbe a scatti senza che si capisca perche'. */
-  if(f.ang>Math.PI||f.ang<-Math.PI)
-    f.ang=((f.ang+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;
-  /* la piega del corpo insegue la sterzata, non la copia: cosi' resta curvo
-     ancora un istante dopo aver finito di girare, come succede davvero */
-  f.piega += ((dt>0 ? giro/dt : 0)*0.16 - f.piega)*Math.min(1,dt*6);
-
-  /* --- spinta e planata --- */
-  var sforzo = (f.fruga>0 ? 0.45 : 1) * (1+2.2*f.scatto);
-  f.fase += dt*f.ritmo*6.28*sforzo;
-  f.coda = Math.sin(f.fase);
-  var colpo = Math.max(0,f.coda);              // spinge solo mezza battuta
-  f.v += colpo*f.spinta*sforzo*dt;
-  f.v -= f.v*1.9*dt;                           // l'acqua frena sempre
-  f.v = Math.min(f.v, 220*(1+f.scatto));
-
-  f.x += Math.cos(f.ang)*f.v*dt;
-  f.y += Math.sin(f.ang)*f.v*dt;
-
-  /* rete di sicurezza: se per qualunque ragione esce, rientra */
-  f.x = Math.max(-20,Math.min(L+20,f.x));
-  f.y = Math.max(A*0.06,Math.min(fondo-6,f.y));
-
-  f.scatto = Math.max(0, f.scatto-dt*1.1);
-}
-
-/* Media fra due angoli passando dalla parte corta: sommarli e dividere per due
-   darebbe la direzione opposta ogni volta che si scavalca il mezzo giro. */
-function miscelaAngolo(a,b,t){
-  var d = ((b-a+Math.PI*3)%(Math.PI*2))-Math.PI;
-  return a + d*t;
-}
-
-function disegnaPesce(ct,f,lucek){
-  var corpo = smorza(f.c.corpo,lucek), pinna = smorza(f.c.pinna,lucek);
-  var ampiezza = 0.22+0.5*Math.min(1,f.v/150)+f.scatto*0.5;
-  var battito = f.coda*ampiezza;
-  var pg = Math.max(-0.55,Math.min(0.55,f.piega));
-
-  ct.save();
-  ct.translate(f.x,f.y);
-  ct.rotate(f.ang);
-  /* il muso guarda sempre avanti: quando nuota verso sinistra si specchia in
-     verticale, altrimenti risulterebbe a pancia in su */
-  if(Math.cos(f.ang)<0) ct.scale(1,-1);
-  ct.scale(f.s,f.s);
-  ct.globalAlpha=f.alpha;
-
-  /* coda */
-  ct.fillStyle=rgba(pinna,1);
-  ct.save();
-  ct.translate(-13,pg*5);
-  ct.rotate(battito*0.5+pg*0.8);
-  ct.beginPath();
-  ct.moveTo(2,0);
-  ct.lineTo(-17,-13);
-  ct.quadraticCurveTo(-11,0,-17,13);
-  ct.closePath();
-  ct.fill();
-  ct.restore();
-
-  /* pinna dorsale */
-  ct.beginPath();
-  ct.moveTo(3,-8);
-  ct.quadraticCurveTo(-3,-17-battito*2,-11,-7+pg*4);
-  ct.closePath();
-  ct.fill();
-
-  /* corpo, piegato dalla parte della curva */
-  var q=pg*6;
-  ct.fillStyle=rgba(corpo,1);
-  ct.beginPath();
-  ct.moveTo(24,0);
-  ct.quadraticCurveTo(14,-10+q*0.4,-1,-9.5+q*0.8);
-  ct.quadraticCurveTo(-12,-8+q,-14,q);
-  ct.quadraticCurveTo(-12,8+q,-1,9.5+q*0.8);
-  ct.quadraticCurveTo(14,10+q*0.4,24,0);
-  ct.fill();
-  /* Bordo scuro attorno al corpo. Alla prova a schermo, col tramonto, il pesce
-     misurava 132,109,81 contro un'acqua 127,60,44: colori diversi ma stessa
-     luminosita', e l'occhio li fondeva. Un pesce vero ha il dorso in ombra e si
-     stacca comunque dall'acqua; questa riga fa la stessa cosa e non tocca lo
-     spegnimento notturno, perche' e' un'ombra, non un colore. */
-  ct.strokeStyle='rgba(6,14,17,.42)';
-  ct.lineWidth=1.3;
-  ct.stroke();
-
-  /* occhio */
-  ct.fillStyle='rgba(14,20,22,'+(0.5+0.4*lucek)+')';
-  ct.beginPath(); ct.arc(17,-2.4,1.8,0,6.2832); ct.fill();
-  ct.restore();
-}
+var onde=[], bolle=[];
 
 /* ===========================================================================
    LE DUE TELE
    =========================================================================== */
-/* La finestra libera fra la testata e il primo pannello: e' l'unico tratto di
-   vasca che non ha vetro davanti, e i pesci devono passarci spesso. NON si
-   indovina con una frazione dell'altezza - alla prima prova a schermo la mia
-   stima diceva 105-341 mentre la finestra vera era 54-280, e i pesci nuotavano
-   tutti sotto, invisibili. Si misura dagli elementi veri e si riaggiorna quando
-   la pagina cambia forma o scorre. */
-var zonaDa=60, zonaA=260;
-function misuraZona(){
-  var testa=document.querySelector('.testa');
-  var fin=document.querySelector('.finestra');
-  if(!testa||!fin) return;
-  var a=testa.getBoundingClientRect().bottom;
-  var b=fin.getBoundingClientRect().bottom;
-  if(b-a>60){ zonaDa=a+10; zonaA=b-10; }
-}
-
 var cD=document.getElementById('dietro'), ctD=cD.getContext('2d');
 var cF=document.getElementById('davanti'), ctF=cF.getContext('2d');
 var L=0, A=0;
@@ -673,7 +430,6 @@ function misura(){
     cv.getContext('2d').setTransform(dpr,0,0,dpr,0,0);
   });
   L=l; A=a;
-  misuraZona();
 }
 
 var t0=null, precedente=null;
@@ -682,7 +438,13 @@ function fotogramma(ts){
   requestAnimationFrame(fotogramma);
   if(t0===null) t0=ts;
   var t=(ts-t0)/1000;
-  var dt=Math.min(0.05,(ts-(precedente===null?ts:precedente))/1000);
+  /* Il tempo trascorso non puo' essere negativo. Se l'orologio dei fotogrammi
+     torna indietro anche una volta sola - un fotogramma disegnato fuori ordine,
+     la pagina che si risveglia dal telefono in tasca - senza questo limite
+     l'onda del tocco si restringe al contrario fino a un raggio negativo, e
+     disegnare un cerchio col raggio negativo e' un errore che ferma
+     l'animazione. Trovato provando la pagina col motore di Safari. */
+  var dt=Math.max(0,Math.min(0.05,(ts-(precedente===null?ts:precedente))/1000));
   precedente=ts;
 
   /* la misura si ricontrolla a ogni giro: se al primo istante la pagina non e'
@@ -747,12 +509,6 @@ function disegnaDietro(t,dt,m,lucek){
     ct.fill();
   }
 
-  /* i pesci */
-  for(var f=0;f<pesci.length;f++){
-    muoviPesce(pesci[f],t,dt,L,A,fondo);
-    disegnaPesce(ct,pesci[f],lucek*pesci[f].alpha);
-  }
-
   /* onde del tocco */
   onde=onde.filter(function(o){ o.t+=dt; return o.t<1; });
   onde.forEach(function(o){
@@ -777,10 +533,9 @@ function disegnaDietro(t,dt,m,lucek){
     ct.beginPath(); ct.arc(b.x,b.y,b.r,0,6.2832); ct.stroke();
   });
 
-  /* Velo in alto perche' il titolo si legga sull'acqua chiara. Era steso su un
-     terzo dello schermo, cioe' proprio sulla finestra dove nuotano i pesci, e
-     li anneriva. Ora si esaurisce appena sotto la testata: al titolo serve
-     contrasto per una sessantina di pixel, non per trecento. */
+  /* Velo in alto perche' il titolo si legga sull'acqua chiara. Si esaurisce
+     appena sotto la testata: al titolo serve contrasto per una sessantina di
+     pixel, non per trecento, e il resto della vasca deve restare luminoso. */
   var finVelo=A*0.20;
   var velo=ct.createLinearGradient(0,0,0,finVelo);
   velo.addColorStop(0,'rgba(4,12,14,.55)');
@@ -836,27 +591,10 @@ function disegnaDavanti(t,m,lucek){
   ct.globalAlpha=1;
 }
 
-/* tocco: onda, e i pesci vicini scattano via */
+/* tocco: un'onda nell'acqua, dove si tocca */
 cD.addEventListener('pointerdown',function(e){
   var r=cD.getBoundingClientRect();
-  var x=e.clientX-r.left, y=e.clientY-r.top;
-  onde.push({x:x,y:y,t:0});
-  var colpito=false;
-  pesci.forEach(function(f){
-    var d=Math.hypot(f.x-x,f.y-y), portata=42*f.s;
-    if(d<portata){
-      colpito=true;
-      f.scatto=1;
-      f.ang=Math.atan2(f.y-y,f.x-x);   // scappa dritto per dritto
-      f.v=Math.max(f.v,120);
-      f.fruga=0; f.tempoFruga=5+Math.random()*6;
-      nuovoBersaglio(f,L,A,A-58,false);
-    }else if(d<portata+120){
-      f.scatto=Math.max(f.scatto,0.45);
-    }
-  });
-  if(colpito) for(var i=0;i<8;i++)
-    bolle.push({x:x+(caso(i*31)-0.5)*26, y:y+(caso(i*37)-0.5)*20, r:1.4+caso(i*41)*2.4, v:28+caso(i*43)*40});
+  onde.push({x:e.clientX-r.left, y:e.clientY-r.top, t:0});
 });
 
 /* ===========================================================================
@@ -1215,9 +953,7 @@ function orologio(){
 }
 
 window.addEventListener('resize',misura);
-document.getElementById('foglio').addEventListener('scroll',misuraZona,{passive:true});
 misura();
-creaPesci();
 dipingi();
 requestAnimationFrame(fotogramma);
 chiedi('/stato');
